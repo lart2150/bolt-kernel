@@ -16,7 +16,9 @@ rumble, LEDs), plus hello/chrdev smoke tests.
 | Path | What |
 |---|---|
 | `stblinux/` | submodule: Broadcom stblinux-3.14 @ tag `stblinux-3.14-1.16` (kernel under `linux/`) |
-| `docker/Dockerfile` | `debian/eol:jessie` + gcc 4.9.2 (the box was built with gcc 4.8.3; host gcc is too new for 3.14) |
+| `docker/Dockerfile` | armv7l hosts: `debian/eol:jessie` + native gcc 4.9.2 (the box was built with gcc 4.8.3; modern gcc can't build 3.14) |
+| `docker/Dockerfile.x64` | x86_64 hosts: jessie host gcc 4.9.2 + Linaro gcc 4.9.4 `arm-linux-gnueabihf` cross (sha256-pinned) |
+| `env.sh` | picks the image by `uname -m`; uses `sudo docker` only if plain `docker` doesn't work |
 | `config/bolt_fragment.config` | appended to `brcmstb_defconfig` — every line is there to match the device's struct layouts |
 | `patches/tivo-layout.patch` | pads `struct request` / `request_queue` / `task_struct` to the TiVo offsets |
 | `patches/cifs-no-keys.patch` | drops cifs's `select KEYS` (device kernel has no keyring) |
@@ -28,21 +30,24 @@ rumble, LEDs), plus hello/chrdev smoke tests.
 
 ## Usage
 
-Designed for an **armv7l host** (a Pi 4 booted 32-bit) so the build is native — no
-cross-compiler. Needs docker, `patch`, and binutils (`arm-linux-gnueabihf-objcopy`/`-nm`
-for `verify.py`).
+Works on **x86_64** (cross) or **armv7l** (native, e.g. a Pi 4 booted 32-bit). Needs docker,
+`patch`, python3 and ARM binutils for `verify.py` (`apt install binutils-arm-linux-gnueabihf`).
 
 ```bash
-git clone --recurse-submodules https://github.com/lart2150/bolt-kernel.git
+git clone --recurse-submodules --shallow-submodules https://github.com/lart2150/bolt-kernel.git
 cd bolt-kernel
 ./prepare.sh                     # once (or after re-checking-out stblinux)
 ./kbuild.sh mod/hello            # -> mod/hello/hello.ko
 ./verify.py mod/hello/hello.ko   # WILL LOAD ON BOLT: YES
 ```
 
-Docker is invoked as `sudo docker` by default; override with `DOCKER=docker`.
 `prepare.sh` builds in place inside `stblinux/linux`, so the submodule is dirty
-afterwards (ignored via `.gitmodules`).
+afterwards (ignored via `.gitmodules`). The prepared tree contains host binaries, so it is
+tied to the host arch that prepared it; re-running `prepare.sh` on another arch cleans it first.
+
+Native vs cross: struct layouts are byte-identical (`offsetof`/`sizeof` probe), and every
+module verifies against the device on both. Code generation differs slightly, since 4.9.4 is not 4.9.2.
+The modules live-tested on the box were all built natively.
 
 Loading on the box: the stock busybox has no `insmod`/`rmmod`; use a separate userland
 (e.g. an Alpine chroot). The module name is the object name, not the filename.
