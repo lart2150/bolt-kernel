@@ -8,17 +8,31 @@ Build environment for **out-of-tree loadable kernel modules** for the TiVo Bolt
 vermagic = 3.14.28-1.16 SMP mod_unload modversions ARMv7 p2v8
 ```
 
-Tested live: fuse (sshfs), cifs (SMB3 + md4/md5/hmac/arc4/ecb/cmac), xpad (input,
-rumble, LEDs), plus hello/chrdev smoke tests.
+## Tested live
+
+Built with this toolchain (gcc 4.8.3, x86_64 cross) and loaded on a Bolt:
+
+| Module(s) | Test | Result |
+|---|---|---|
+| hello, chrdev_demo | load, run, unload | OK. chrdev registers major 253 |
+| fuse | sshfs suite: 8M read and 16M write md5, 300-file metadata, rename/symlink/chmod/truncate, 4 parallel readers, mmap, remount, rmmod | all pass |
+| md4 md5 hmac arc4 ecb cmac + cifs | SMB 3.0 mount of a Samba share: 16M read/write md5, 200 small files, rename, parallel readers, umount, rmmod | all pass |
+| ff-memless, led_class, xpad, joydev | wired Xbox 360 pad: input events, ring LED, strong/weak rumble, 200-update rumble stress, jstest | all pass |
+
+cifs sometimes logs `CIFS VFS: SMB response too long (65616 bytes)` against a modern Samba. The
+earlier gcc 4.9.2 builds do the same, and data is unaffected.
+
+Not load-tested: cuse and the USB-serial drivers (ch341, pl2303, ftdi_sio, cp210x, cdc-acm).
+Those module sources are copies of the in-tree drivers, with xpad carrying a backported output
+queue, and are not included here.
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `stblinux/` | submodule: Broadcom stblinux-3.14 @ tag `stblinux-3.14-1.16` (kernel under `linux/`) |
-| `docker/Dockerfile` | armv7l hosts: `debian/eol:jessie` + native gcc 4.9.2 (the box was built with gcc 4.8.3; modern gcc can't build 3.14) |
-| `docker/Dockerfile.x64` | x86_64 hosts: jessie host gcc 4.9.2 + Linaro gcc 4.9.4 `arm-linux-gnueabihf` cross (sha256-pinned) |
-| `env.sh` | picks the image by `uname -m`; uses `sudo docker` only if plain `docker` doesn't work |
+| `docker/Dockerfile` | Ubuntu 14.10 toolchain, **gcc 4.8.3**, the device kernel's version. `UARCH=amd64` gives the cross build, `UARCH=armhf` the native one |
+| `env.sh` | picks `UARCH`/`CROSS_COMPILE` by `uname -m`; uses `sudo docker` only if plain `docker` doesn't work |
 | `config/bolt_fragment.config` | appended to `brcmstb_defconfig` — every line is there to match the device's struct layouts |
 | `patches/tivo-layout.patch` | pads `struct request` / `request_queue` / `task_struct` to the TiVo offsets |
 | `patches/cifs-no-keys.patch` | drops cifs's `select KEYS` (device kernel has no keyring) |
@@ -42,14 +56,38 @@ cd bolt-kernel
 ```
 
 `prepare.sh` builds in place inside `stblinux/linux`, so the submodule is dirty
-afterwards (ignored via `.gitmodules`). The prepared tree contains host binaries, so it is
-tied to the host arch that prepared it; re-running `prepare.sh` on another arch cleans it first.
+afterwards (ignored via `.gitmodules`). The prepared tree is tied to the host arch and
+toolchain image that prepared it, and `prepare.sh` cleans it if either changes.
 
-Native vs cross: struct layouts are byte-identical (`offsetof`/`sizeof` probe), and every
-module verifies against the device on both. Code generation differs slightly, since 4.9.4 is not 4.9.2.
-The modules live-tested on the box were all built natively.
+## Toolchain
 
-Loading on the box: the stock busybox has no `insmod`/`rmmod`; use a separate userland
+The device kernel banner says `gcc version 4.8.3 (GCC)`. Ubuntu 14.10 (utopic) shipped gcc 4.8.3,
+both as a native armhf compiler and as an `arm-linux-gnueabihf` cross compiler, and both are still
+on old-releases.ubuntu.com. Docker 29 can't pull the `ubuntu:14.10` image (v1 manifest), so the
+Dockerfile starts from Ubuntu's 14.10 core rootfs tarball. Its sha256 comes from SHA256SUMS signed
+by the Ubuntu CD Image key `C598 6B4F 1257 FFA8 6632 CBA7 4618 1433 FBB7 5451`.
+
+Rebuilding the stock modules TiVo ships (cdc-acm, ftdi_sio, evdev) and comparing `.text` to the
+device's own binaries:
+
+| | gcc 4.9.2 (jessie) | Linaro 4.9.4 | **utopic 4.8.3** |
+|---|---|---|---|
+| cdc-acm | 55.5% | 50.4% | **97.8%** |
+| ftdi_sio | 59.7% (+160 B) | 44.3% (+148 B) | **94.6% (same size)** |
+| evdev | 37.0% | 36.0% | **65.6%** |
+
+(The percentages are the device's instruction words matched in order.) Struct layouts don't depend
+on the compiler; the `offsetof`/`sizeof` probe is byte-identical across all three.
+
+The x86_64 cross build and the armv7l native build produce byte-identical `.text` for every
+module, so it doesn't matter which host you build on.
+
+Build speed, Ryzen 9 7900X under WSL vs Pi 4: a full prepare takes 6 s vs 52 s, and a clean
+`cifs.ko` 1.9 s vs 25 s. Container startup alone is about 9 s on the Pi.
+
+## Loading
+
+The stock busybox has no `insmod`/`rmmod`; use a separate userland
 (e.g. an Alpine chroot). The module name is the object name, not the filename.
 
 ## Why the config looks the way it does

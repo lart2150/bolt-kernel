@@ -8,7 +8,8 @@ REPO=$PWD
 
 [ -f $KTREE/Makefile ] || git submodule update --init stblinux
 # host networking: under WSL the DNS stub isn't reachable from the default bridge
-$DOCKER image inspect "$IMAGE" >/dev/null 2>&1 || $DOCKER build --network host -t "$IMAGE" -f $DOCKERFILE docker/
+$DOCKER image inspect "$IMAGE" >/dev/null 2>&1 || \
+  $DOCKER build --network host --build-arg UARCH=$UARCH -t "$IMAGE" docker/
 
 # tivo-layout: TiVo struct padding (request/request_queue/task_struct); cifs-no-keys: device has no KEYS
 for p in patches/*.patch; do
@@ -19,11 +20,14 @@ for p in patches/*.patch; do
   fi
 done
 
-# scripts/ holds host binaries: a tree prepared on another host arch must be cleaned first
+# the prepared tree holds host binaries and compiler-dependent output: clean it if it was
+# prepared on another host arch or with another toolchain image
+STAMP="$(uname -m) $($DOCKER image inspect -f '{{.Id}}' "$IMAGE")"
 CLEAN=
-[ -f $KTREE/.bolt-host ] && [ "$(cat $KTREE/.bolt-host)" != "$(uname -m)" ] && CLEAN="make mrproper"
+[ -f $KTREE/.bolt-host ] && [ "$(cat $KTREE/.bolt-host)" != "$STAMP" ] && CLEAN="make mrproper"
 
-$DOCKER run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$REPO":/kbuild "$IMAGE" bash -c "
+$DOCKER run --rm --user $(id -u):$(id -g) -e HOME=/tmp -e CROSS_COMPILE=$CROSS_COMPILE \
+    -v "$REPO":/kbuild "$IMAGE" bash -c "
   set -e; cd /kbuild/$KTREE; export ARCH=arm HOME=/tmp
   $CLEAN
   make -j\$(nproc) brcmstb_defconfig >/dev/null 2>&1
@@ -31,6 +35,6 @@ $DOCKER run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$REPO":/kbuild "$IMAG
   make -j\$(nproc) olddefconfig >/dev/null 2>&1
   make -j\$(nproc) modules_prepare
   cp /kbuild/symvers/Module.symvers.device ./Module.symvers
-  echo PREPARED: \$(sed -n 's/.*\"\(.*\)\"/\1/p' include/generated/utsrelease.h) with \${CROSS_COMPILE}gcc \$(\${CROSS_COMPILE}gcc -dumpversion)
+  echo PREPARED: \$(sed -n 's/.*\"\(.*\)\"/\1/p' include/generated/utsrelease.h) with \$(\${CROSS_COMPILE}gcc --version | head -1)
 "
-uname -m > $KTREE/.bolt-host
+echo "$STAMP" > $KTREE/.bolt-host

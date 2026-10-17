@@ -7,8 +7,10 @@ cd "$(dirname "$0")"
 REPO=$PWD
 . ./env.sh
 [ -f "$MODDIR/Makefile" ] || [ -f "$MODDIR/Kbuild" ] || { echo "no Makefile/Kbuild in $MODDIR"; exit 1; }
-[ "$(cat $KTREE/.bolt-host 2>/dev/null)" = "$(uname -m)" ] || { echo "tree not prepared on this host -> run ./prepare.sh"; exit 2; }
-$DOCKER run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$REPO":/kbuild -v "$MODDIR":/mod "$IMAGE" bash -c "
+STAMP="$(uname -m) $($DOCKER image inspect -f '{{.Id}}' "$IMAGE" 2>/dev/null)"
+[ "$(cat $KTREE/.bolt-host 2>/dev/null)" = "$STAMP" ] || { echo "tree not prepared for this host/toolchain -> run ./prepare.sh"; exit 2; }
+$DOCKER run --rm --user $(id -u):$(id -g) -e HOME=/tmp -e CROSS_COMPILE=$CROSS_COMPILE \
+    -v "$REPO":/kbuild -v "$MODDIR":/mod "$IMAGE" bash -c "
   set -e; cd /kbuild/$KTREE; export ARCH=arm HOME=/tmp
   [ -f Module.symvers ] || cp /kbuild/symvers/Module.symvers.device ./Module.symvers
   make -j\$(nproc) M=/mod modules $*

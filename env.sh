@@ -1,11 +1,11 @@
-# Sourced by prepare.sh / kbuild.sh: pick the toolchain image for this host.
-#   armv7l (Pi booted 32-bit): native build, docker/Dockerfile      -> tivo-kbuild:3.14
-#   x86_64:                    cross build,  docker/Dockerfile.x64  -> tivo-kbuild:3.14-x64
+# Sourced by prepare.sh / kbuild.sh: pick the toolchain flavour for this host (docker/Dockerfile).
+#   x86_64: cross gcc-4.8-arm-linux-gnueabihf 4.8.3  -> tivo-kbuild:4.8.3-amd64
+#   armv7l: native gcc-4.8 4.8.3 (Pi booted 32-bit)  -> tivo-kbuild:4.8.3-armhf
 case "$(uname -m)" in
-  armv7l|armv8l) DEF_IMAGE=tivo-kbuild:3.14;     DOCKERFILE=docker/Dockerfile ;;
-  x86_64)        DEF_IMAGE=tivo-kbuild:3.14-x64; DOCKERFILE=docker/Dockerfile.x64 ;;
-  *) echo "unsupported build host: $(uname -m) (need armv7l or x86_64)"; exit 1 ;;
+  x86_64)        UARCH=amd64; CROSS_COMPILE=arm-linux-gnueabihf- ;;
+  armv7l|armv8l) UARCH=armhf; CROSS_COMPILE= ;;
+  *) echo "unsupported build host: $(uname -m) (need x86_64 or armv7l)"; exit 1 ;;
 esac
-IMAGE=${IMAGE:-$DEF_IMAGE}
+IMAGE=${IMAGE:-tivo-kbuild:4.8.3-$UARCH}
 if [ -z "$DOCKER" ]; then docker info >/dev/null 2>&1 && DOCKER=docker || DOCKER="sudo docker"; fi
 KTREE=stblinux/linux
