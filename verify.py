@@ -21,6 +21,13 @@ vm_ok = vermagic == TARGET
 dev = {}
 for line in open(DEVTBL):
     p = line.rstrip("\n").split("\t"); dev[p[1]] = int(p[0], 16)
+# exports of sibling modules built alongside (cuse -> fuse, xpad -> ff-memless/led_class); load those first
+local = []
+LOCALTBL = os.path.join(os.path.dirname(os.path.abspath(ko)), "Module.symvers")
+if os.path.exists(LOCALTBL):
+    for line in open(LOCALTBL):
+        p = line.rstrip("\n").split("\t")
+        if len(p) >= 2 and p[1] not in dev: dev[p[1]] = int(p[0], 16); local.append(p[1])
 
 v = section(ko, "__versions"); mod = {}
 for i in range(0, len(v), 64):
@@ -40,6 +47,8 @@ print("versioned imports:", len(mod), "| crc-missing:", len(crc_missing), "| crc
 if crc_missing: print("   crc-missing:", crc_missing[:20])
 if crc_bad: print("   crc-mismatch:", crc_bad[:20])
 print("undefined syms NOT provided by kernel:", len(und_missing))
+used_local = sorted(set(mod) & set(local))
+if used_local: print("needs sibling module(s) loaded first for:", used_local)
 if und_missing: print("   ->", und_missing[:30])
 loadable = vm_ok and not crc_missing and not crc_bad and not und_missing
 print("WILL LOAD ON BOLT:", "YES" if loadable else "NO (fix the above)")
