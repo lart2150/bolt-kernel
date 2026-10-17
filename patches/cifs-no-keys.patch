@@ -1,0 +1,10 @@
+--- a/fs/cifs/Kconfig
++++ b/fs/cifs/Kconfig
+@@ -165,7 +165,6 @@
+ 	bool "SMB2 network file system support"
+ 	depends on CIFS && INET
+ 	select NLS
+-	select KEYS
+ 	select FSCACHE
+ 	select DNS_RESOLVER
+ 

@@ -1,0 +1,48 @@
+diff -ru a/include/linux/blkdev.h b/include/linux/blkdev.h
+--- a/include/linux/blkdev.h	2026-10-16 21:45:01.809093627 -0500
++++ b/include/linux/blkdev.h	2026-10-16 21:45:01.821093463 -0500
+@@ -183,7 +183,9 @@
+ 	unsigned int resid_len;	/* residual count */
+ 	void *sense;
+ 
++	unsigned long tivo_rq_pad0;	/* TiVo: device deadline is at 192 (stblinux 188) */
+ 	unsigned long deadline;
++	unsigned long tivo_rq_pad1;	/* TiVo: device timeout_list is at 200 */
+ 	struct list_head timeout_list;
+ 	unsigned int timeout;
+ 	int retries;
+@@ -394,6 +396,13 @@
+ 	 * queue settings
+ 	 */
+ 	unsigned long		nr_requests;	/* Max # of requests */
++	/*
++	 * TiVo write-credit I/O throttle (72 bytes, device offsets 820..891).
++	 * Known: [0] requests_read 820, [5] write_credits 840, [6] credits used 844,
++	 * [7] writes_per_sec 848, [8] writes_per_sec_reading 852, [9] credit_writes 856,
++	 * [10] last refill jiffies 860, [11] credit_period 864.
++	 */
++	unsigned long		tivo_credit[18];
+ 	unsigned int		nr_congestion_on;
+ 	unsigned int		nr_congestion_off;
+ 	unsigned int		nr_batching;
+diff -ru a/include/linux/sched.h b/include/linux/sched.h
+--- a/include/linux/sched.h	2026-10-16 21:45:01.809093627 -0500
++++ b/include/linux/sched.h	2026-10-16 21:45:01.821093463 -0500
+@@ -1545,6 +1545,17 @@
+ 	unsigned long timer_slack_ns;
+ 	unsigned long default_timer_slack_ns;
+ 
++	/*
++	 * TiVo vendor fields (not in stblinux; recovered from the device Image, see
++	 * bolt/kernel-build-env.md part 3/4). Device has none of the optional tail
++	 * fields below (ftrace/tracing/memcg/uprobes/bcache), so these sit at 0x474.
++	 */
++	unsigned long tivo_run_state;		/* 0x474 stop_runnables/restore_runnables, wake_up_state */
++	unsigned long tivo_pad_478;		/* 0x478 unidentified */
++	unsigned char tivo_cmdline_flag;	/* 0x47c proc_pid_write_cmdline, tivocrashallassert */
++	unsigned char tivo_pad_47d[3];
++	char tivo_cmdline[128];			/* 0x480 cmdline override buffer (ends at 0x500 = device sizeof) */
++
+ #ifdef CONFIG_FUNCTION_GRAPH_TRACER
+ 	/* Index of current stored address in ret_stack */
+ 	int curr_ret_stack;
